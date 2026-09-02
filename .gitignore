@@ -1,0 +1,25 @@
+# Build output
+bin/
+obj/
+dist/
+
+# Runtime state: the game writes this beside itself on exit.
+big2.ini
+
+# Deny-by-default for documentation.
+#
+# Everything in this project except the README is internal -- working notes, the
+# differences record, session logs. Listing them individually means the next new
+# note is tracked by accident, and the ignore file then has to name the very
+# documents that must not be named anywhere public. Excluding the whole class
+# and re-admitting one file is the only arrangement that stays correct as
+# documents are added.
+#
+# Here it is a second line of defence rather than the first: this repository's
+# boundary sits BELOW the internal material, which lives one directory up and so
+# cannot be committed from inside the working tree at all.
+*.md
+!README.md
+
+# Push-guard terms. Untracked on purpose: publishing them defeats the guard.
+.githooks/forbidden-terms

@@ -1,0 +1,15 @@
+# Normalise line endings in the repository; check out native on Windows.
+* text=auto
+
+# The pre-push hook is a shell script, and a shell script with CRLF line
+# endings fails on Linux and macOS with "bad interpreter: /bin/sh^M" -- the
+# carriage return becomes part of the interpreter path. Git Bash's sh tolerates
+# it, which is exactly why testing the hook on Windows cannot catch this.
+# Everything here is win-x64 and WPF, so it is unlikely to be cloned elsewhere;
+# an unnoticed silently-broken guard is still not worth the saving.
+.githooks/pre-push text eol=lf
+
+# Binary assets: never touched.
+*.bmp binary
+*.ico binary
+*.png binary

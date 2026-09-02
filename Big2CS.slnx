@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Big2.Core/Big2.Core.csproj" />
+  <Project Path="Big2.App/Big2.App.csproj" />
+</Solution>

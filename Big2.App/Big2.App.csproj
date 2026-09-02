@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\big2.ico</ApplicationIcon>
+    <AssemblyName>Big2</AssemblyName>
+    <RootNamespace>Big2.App</RootNamespace>
+
+    <!-- Shipped identity. Without these the SDK still stamps 1.0.0.0, but
+         Product and FileDescription fall back to the ASSEMBLY name, so the
+         exe's properties sheet reads "Big2" where every sibling reads the
+         game's name. The version matches the release tag; the playbook's
+         rule is that the tag carries vMAJOR.MINOR.PATCH and the release
+         title carries no version at all. -->
+    <AssemblyTitle>Big 2</AssemblyTitle>
+    <Product>Big 2</Product>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <Copyright>Copyright 2026 Jared Andersen. Apache-2.0; card artwork CC BY 4.0.</Copyright>
+    <Description>Big 2 - the Chinese climbing game, for Windows.</Description>
+    <!-- Set at scaffold time, not on rediscovery: WPF ships native interop
+         DLLs that single-file bundling cannot fold in without the first of
+         these, so a plain publish leaves five loose files beside the exe. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- WPF does not support trimming. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Big2.Core\Big2.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\**\*.bmp" />
+    <Resource Include="Assets\big2.ico" />
+  </ItemGroup>
+</Project>

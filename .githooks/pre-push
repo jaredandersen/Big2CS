@@ -1,0 +1,162 @@
+#!/bin/sh
+#
+# pre-push -- blocks internal material from reaching a published remote.
+#
+# Every rule here was written down before it was needed, and the manual check
+# still failed three times: twice a commit message named an internal file (a
+# perfectly natural sentence, which puts the string into permanent history), and
+# once an internal document was committed and pushed outright. A hook turns "did
+# I remember to check" into "the push fails".
+#
+# Install per clone -- hooks are not cloned:
+#
+#     git config core.hooksPath .githooks
+#
+# Four details decide whether this works, and all four are deliberate:
+#
+#   1. It scans ONLY the refs git hands it on stdin, never --all. Scanning
+#      everything also sweeps in remote-tracking refs, so straight after a
+#      history rewrite it reports the OLD history through a stale origin/main
+#      that this very push is about to replace. A guard that cries wolf on the
+#      correct action teaches you to bypass it.
+#   2. The forbidden terms live in an UNTRACKED file, never in this one. A term
+#      written literally here would match this file and block every push -- and,
+#      worse, would publish the very string it exists to keep private.
+#   3. It must be tested in BOTH directions -- commit something that should
+#      fail, watch it block and name the offender, then remove it and watch it
+#      pass. An unproven guard is worse than none, because it is trusted.
+#   4. `git diff-tree` lists NOTHING for a root commit, because there is no
+#      parent to diff against. Without --root, checks 2 and 3 silently skip the
+#      whole initial commit -- every file in a fresh repository -- so the very
+#      first push, the one that establishes what is public, is the one they do
+#      not examine.
+#
+# In this project the repository boundary already sits BELOW the internal
+# material: the working notes live one directory above the repository root and
+# cannot be committed from inside the working tree at all. This hook is the
+# second line, not the first.
+
+set -e
+
+TERMS_FILE="$(dirname "$0")/forbidden-terms"
+
+fail() {
+    echo "pre-push: $1" >&2
+    echo "pre-push: push aborted." >&2
+    exit 1
+}
+
+# (2) One term per line; blank lines and #-comments ignored. Untracked, so the
+# terms themselves are never published. Absent means checks 1 and 2 cannot run,
+# and the hook says so rather than passing silently.
+terms=''
+if [ -f "$TERMS_FILE" ]; then
+    terms=$(grep -vE '^[[:space:]]*(#|$)' "$TERMS_FILE" | paste -sd'|' -)
+fi
+[ -z "$terms" ] && echo "pre-push: no $TERMS_FILE -- term checks skipped." >&2
+
+# (1) only what is actually being pushed
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    case "$local_sha" in
+        0000000000000000000000000000000000000000) continue ;;   # branch deletion
+    esac
+
+    case "$remote_sha" in
+        0000000000000000000000000000000000000000)
+            # New branch: every commit reachable from it that the remote lacks.
+            range="$local_sha --not --remotes"
+            ;;
+        *)
+            range="$remote_sha..$local_sha"
+            ;;
+    esac
+
+    commits=$(git rev-list $range 2>/dev/null || true)
+    [ -z "$commits" ] && continue
+
+    # --- 1. commit messages, trailers included
+    if [ -n "$terms" ]; then
+        for c in $commits; do
+            if git log -1 --format='%B' "$c" | grep -qiE "$terms"; then
+                fail "commit $(git log -1 --format='%h' "$c") matches a forbidden term in its message or trailers"
+            fi
+        done
+    fi
+
+    # --- 2. file contents, across every commit being pushed
+    if [ -n "$terms" ]; then
+        for c in $commits; do
+            files=$(git diff-tree --root --no-commit-id --name-only -r "$c")
+            [ -z "$files" ] && continue
+            for f in $files; do
+                git cat-file -e "$c:$f" 2>/dev/null || continue
+                if git show "$c:$f" | grep -qiE "$terms"; then
+                    fail "$f matches a forbidden term (commit $(git log -1 --format='%h' "$c"))"
+                fi
+            done
+        done
+    fi
+
+    # --- 3. internal documents anywhere in the pushed history
+    #
+    # Detected by SHAPE rather than by name: every internal note in this project
+    # is markdown, and the only markdown that ships is the README. Listing the
+    # documents individually would publish the list, and would silently miss the
+    # next one that gets added.
+    for c in $commits; do
+        if git diff-tree --root --no-commit-id --name-only -r "$c" |
+           grep -iE '\.md$' | grep -qvE '(^|/)README\.md$'; then
+            fail "commit $(git log -1 --format='%h' "$c") adds markdown other than README.md"
+        fi
+    done
+done
+
+# --- 4. a shipped file pointing at a document that does not ship
+#
+# Removing an internal document from the export orphans every comment and link
+# that referenced it -- a pointer to something that is not there. Checked
+# against the working tree, since that is what a cloner receives.
+for tracked in $(git ls-files); do
+    case "$tracked" in
+        .githooks/*) continue ;;
+    esac
+    if grep -ohE '[A-Za-z0-9_.-]+\.md' "$tracked" 2>/dev/null | grep -qvE '^README\.md$'; then
+        fail "$tracked refers to a markdown file other than README.md"
+    fi
+done
+
+# --- 5. every project the solution names must actually exist
+#
+# The solution is the shipping artifact and excludes the test project on
+# purpose, so this guards the opposite mistake: a Path= pointing at something
+# the export does not contain fails on somebody's first clone and build, which
+# is exactly where it is most expensive.
+for sln in $(git ls-files '*.slnx' '*.sln'); do
+    for proj in $(grep -oE 'Path="[^"]+"' "$sln" | sed 's/Path="//; s/"//'); do
+        dir=$(dirname "$sln")
+        [ "$dir" = "." ] && candidate="$proj" || candidate="$dir/$proj"
+        if [ ! -f "$candidate" ]; then
+            fail "$sln references $proj, which is not in the repository"
+        fi
+    done
+done
+
+# --- 6. no absolute filesystem paths from the machine this was built on
+#
+# A drive-letter path in a shipped file is wrong in both directions: it publishes
+# the layout of the development machine, and it silently fails to resolve on
+# anybody else's clone. Both halves have already happened -- a hardcoded
+# data-file lookup survived in one of two copies of the same function long after
+# the other was fixed, and an asset manifest recorded its source binary by full
+# path. No other check here catches it, and keeping internal files out of the
+# repository does not prevent it, because both offenders legitimately ship.
+#
+# The leading (^|[^A-Za-z0-9]) is load-bearing: a bare [A-Za-z]:[\\/] also
+# matches the "p://" inside http:// and the "k://" inside pack://, which flags
+# every XAML file and the README.
+for f in $(git grep -lIE '(^|[^A-Za-z0-9])[A-Za-z]:[\\/]' HEAD -- ':!.githooks/*' 2>/dev/null | sed 's/^HEAD://'); do
+    fail "$f contains an absolute filesystem path"
+done
+
+echo "pre-push: clean."
+exit 0
